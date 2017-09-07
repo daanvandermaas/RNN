@@ -6,17 +6,21 @@ total_series_length = 50000
 truncated_backprop_length = 15
 state_size = 4
 num_classes = 2
-echo_step = 3
+echo_step = 1
 batch_size = 5
-num_batches = total_series_length/(batch_size * truncated_backprop_length)
-lrate = 0.3
+num_batches = floor(total_series_length/(batch_size * truncated_backprop_length))
+lrate = 0.1
 
 
 #maak dumydata
 generateData = function(){
 x = sample(c(1,0), total_series_length, replace = TRUE )  
-y = c(1:echo_step, x)[1:total_series_length]
-y[1:echo_step] = 0
+x = matrix(x, nrow = batch_size, byrow = TRUE)
+
+y = array(0, dim = c(nrow(x),echo_step))
+y = cbind(y ,x)
+y= y[,-c(ncol(y):(ncol(y)-echo_step)  )]
+
 
 return(list(x,y))
 }
@@ -24,7 +28,7 @@ return(list(x,y))
 
 #de placeholders
 batchX_placeholder = tf$placeholder(tf$float32, c(batch_size, truncated_backprop_length))
-batchY_placeholder = tf$placeholder(tf$float32, c(batch_size, truncated_backprop_length, num_classes))
+batchY_placeholder = tf$placeholder(tf$int32, c(batch_size, truncated_backprop_length))
 
 init_state_placeholder = tf$placeholder(tf$float32, c(batch_size, state_size))
 
@@ -58,7 +62,7 @@ current_state = next_state
 #final layer
 logits_series = list()
 for(state in states_series){
-logit = tf$matmul(states_series[[1]],W) +b
+logit = tf$matmul(state,W) +b
 logits_series = c(logits_series, logit)
 }
 
@@ -72,37 +76,61 @@ prediction_series =  c(prediction, prediction_series)
 
 
 
-cost = 0
-for( i in 1:length(logits_series)){
-cost =   tf$nn$softmax_cross_entropy_with_logits( logits = logits_series[[1]], labels = labels_series[[1]]  )
+cost = list()
+for( i in 1:length(prediction_series)){
+
+cost = c(cost, tf$nn$sparse_softmax_cross_entropy_with_logits(logits = logits_series[[i]], labels = labels_series[[i]]) )
+
 }
 
-train_step = tf$train$AdamOptimizer(lrate)$minimize(cost)
+loss = tf$reduce_mean( tf$stack(cost, axis = 0))
+
+train_step = tf$train$AdamOptimizer(lrate)$minimize(loss)
 
 
 #start sessie
 sess <- tf$InteractiveSession()
 sess$run(tf$global_variables_initializer())
 
-x = generateData()
-y = x[[2]]
-x = x[[1]]
-
-batchX = x[1: (batch_size*truncated_backprop_length)]
-batchY = y[1: (batch_size*truncated_backprop_length)]
-batchX = matrix(batchX, nrow = batch_size)
-batchY = matrix(batchY, nrow = batch_size)
-batchY = array(c(as.numeric(batchY==0), as.numeric(batchY==1)), dim = c(dim(batchY), 2) )
 
 
-init_state = matrix(0, nrow = batch_size , ncol = state_size )
 
-for(i in 1:10000){
-train_step$run(feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
- c = sess$run(  cost , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
-print(c)
- }
+for(epoch_idx in 1:num_epochs){
+  x = generateData()
+  y = x[[2]]
+  x = x[[1]]
+  
+  init_state = matrix(0, nrow = batch_size , ncol = state_size )
+  
+  print( paste('new data, epoch', epoch_idx))
+  
+  for(batch_idx in 1:num_batches){
+    start_idx = (batch_idx-1)*truncated_backprop_length +1
+    end_idx = start_idx + truncated_backprop_length -1
+    
+ batchX = x[,start_idx:end_idx]
+ batchY = y[,start_idx:end_idx]
 
+ 
+ 
+ train_step$run(feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+ 
+ 
+    
+  }
+  
+  prestatie = sess$run(loss ,feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+  print(paste('cost:',prestatie))
+  
+}
+  
+  
+
+
+
+
+
+sess$run(  loss , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
 
 
 
