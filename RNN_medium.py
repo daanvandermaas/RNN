@@ -3,12 +3,12 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-num_epochs = 100
+num_epochs = 10
 total_series_length = 50000
 truncated_backprop_length = 15
 state_size = 4
 num_classes = 2
-echo_step = 2
+echo_step = 1
 batch_size = 5
 num_batches = total_series_length//(batch_size * truncated_backprop_length)
 
@@ -57,7 +57,7 @@ for current_input in inputs_series:
     current_state = next_state
 
 logits_series = [tf.matmul(state, W2) + b2 for state in states_series] #Broadcasted addition
-predictions_series = [tf.nn.softmax(logits) for logits in logits_series]
+predictions_series = [ tf.argmax(tf.nn.softmax(logits), axis = 1L) for logits in logits_series]
 
 
 #loss function
@@ -97,7 +97,7 @@ with tf.Session() as sess:
                     init_state:_current_state
                 })
         
-        l = sess.run( logits_series,
+        l = sess.run( total_loss,
                 feed_dict={
                     batchX_placeholder:batchX,
                     batchY_placeholder:batchY,
@@ -106,9 +106,16 @@ with tf.Session() as sess:
                 
         print(l)
 
-            #if batch_idx%100 == 0:
-             #   print("Step",batch_idx, "Loss", _total_loss)
-             #   plot(loss_list, _predictions_series, batchX, batchY)
-
-
-
+        sess.run( labels_series,
+                feed_dict={
+                    batchX_placeholder:batchX,
+                    batchY_placeholder:batchY,
+                    init_state:_current_state
+                })
+        sess.run( predictions_series,
+                feed_dict={
+                    batchX_placeholder:batchX,
+                    batchY_placeholder:batchY,
+                    init_state:_current_state
+                })
+                

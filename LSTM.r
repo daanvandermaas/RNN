@@ -1,28 +1,29 @@
 library(tensorflow)
 library(rlist)
 
-num_epochs = 100
+num_epochs = 10
 total_series_length = 50000
 truncated_backprop_length = 15
-state_size = 4
+state_size = 3
 num_classes = 2L
 echo_step = 1
-batch_size = 5
+batch_size = 20
 num_batches = floor(total_series_length/(batch_size * truncated_backprop_length))
 lrate = 0.01
+num_input = 1L
 
 
 #maak dumydata
 generateData = function(){
-x = sample(c(1,0), total_series_length, replace = TRUE )  
-x = matrix(x, nrow = batch_size, byrow = TRUE)
-
-y = array(0, dim = c(nrow(x),echo_step))
-y = cbind(y ,x)
-y= y[,-c(ncol(y):(ncol(y)-echo_step)  )]
-
-
-return(list(x,y))
+  x = sample(c(1,0), total_series_length, replace = TRUE )  
+  x = matrix(x, nrow = batch_size, byrow = TRUE)
+  
+  y = array(0, dim = c(nrow(x),echo_step))
+  y = cbind(y ,x)
+  y= y[,-c(ncol(y):(ncol(y)-echo_step)  )]
+  
+  
+  return(list(x,y))
 }
 
 
@@ -34,7 +35,7 @@ init_state_placeholder = tf$placeholder(tf$float32, c(batch_size, state_size))
 
 
 #de variabelen
-W_cell = tf$Variable(tf$truncated_normal(shape(state_size+1 ,state_size), stddev=0.1))
+W_cell = tf$Variable(tf$truncated_normal(shape(state_size+ num_input ,state_size), stddev=0.1))
 b_cell = tf$Variable(tf$truncated_normal(shape(1L, state_size), stddev=0.1))
 
 W = tf$Variable(tf$truncated_normal(shape(state_size, num_classes), stddev=0.1))
@@ -50,34 +51,37 @@ labels_series = tf$unstack(batchY_placeholder, axis = 1L)
 current_state = init_state_placeholder
 states_series = list()
 for(current_input in inputs_series){
-current_input = tf$reshape(current_input, shape =  shape(batch_size, 1))
-input_and_state_concatenated =  tf$concat(axis = 1L, values = list(current_input, current_state))
- 
-next_state = tf$tanh( tf$add(   tf$matmul(input_and_state_concatenated, W_cell  ), b_cell )  )
-states_series = c(states_series, next_state)
-current_state = next_state
- 
+  current_input = tf$reshape(current_input, shape =  shape(batch_size, 1))
+  input_and_state_concatenated =  tf$concat(axis = 1L, values = list(current_input, current_state))
+  
+  next_state = tf$tanh( tf$add(   tf$matmul(input_and_state_concatenated, W_cell  ), b_cell )  )
+  states_series = c(states_series, next_state)
+  current_state = next_state
+  
 }
 
 #final layer
 logits_series = list()
 for(state in states_series){
-logit = tf$matmul(state,W) +b
-logits_series = c(logits_series, logit)
+  logit = tf$matmul(state,W) +b
+  logits_series = c(logits_series, logit)
+}
+
+#softmax
+prediction_series = list()
+for(logit in logits_series){
+  prediction = tf$argmax(tf$nn$softmax(logit), axis = 1L)
+  prediction_series =  c(prediction, prediction_series)
 }
 
 
 
 
-
-
 cost = list()
-prestation = list()
 for( i in 1:length(prediction_series)){
-
-cost = c(cost, tf$nn$sparse_softmax_cross_entropy_with_logits(logits = logits_series[[i]], labels = labels_series[[i]]) )
-prestation = c(prestation, tf$argmax(logits_series[[i]], axis = 1L) )
-
+  
+  cost = c(  cost, tf$nn$softmax_cross_entropy_with_logits( logits = logits_series[[i]], labels = tf$one_hot(labels_series[[i]], depth = num_classes) )   )
+  
 }
 
 loss = tf$reduce_mean( tf$stack(cost, axis = 0))
@@ -105,24 +109,24 @@ for(epoch_idx in 1:num_epochs){
     start_idx = (batch_idx-1)*truncated_backprop_length +1
     end_idx = start_idx + truncated_backprop_length -1
     
- batchX = x[,start_idx:end_idx]
- batchY = y[,start_idx:end_idx]
-
- 
- 
- train_step$run(feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
- 
- 
+    batchX = x[,start_idx:end_idx]
+    batchY = y[,start_idx:end_idx]
+    
+    
+    
+    train_step$run(feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+    
+    
     
   }
   
   prestatie = sess$run(loss ,feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
-  pres = sess$run(prestation ,feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
   print(paste('cost:',prestatie))
   
 }
-  
-  
+
+
+
 
 
 #test
@@ -140,10 +144,9 @@ batchY = y[,start_idx:end_idx]
 
 
 
-sess$run(  labels_series[[5]]  , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
-sess$run(  prestation[[5]]  , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+sess$run(  loss , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+pred = sess$run(  prediction_series , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
+target = sess$run(  labels_series , feed_dict = dict(batchX_placeholder = batchX, batchY_placeholder = batchY, init_state_placeholder = init_state))
 
-
-
-
+(pred - target)^2
 
